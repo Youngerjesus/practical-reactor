@@ -119,3 +119,62 @@ https://projectreactor.io/docs/core/release/reference/
     - bfs 방식으로 추가. 
   - `expandDeep(function) (Flux|Mono)`
 
+## A.4. Filtering a Sequence
+
+- I want to filter a sequence
+  - 임의 조건을 기반으로 필터 `filter (Flux|Mono)`
+    - filter 조건이 async 하게 결정된다면 `filterWhen (Flux|Mono)`
+      - 조건이 true 면 replay 되는 식으로 요소가 들어온다. 
+      - 조건이 false 나 empty 면 방출되는 요소는 drop 된다.
+      - 중요한 건 여기서 filterWhen 으로 전달한 publisher 의 첫 번째 값만이 이용된다는 점이다. Mono 가 아니라면 첫 요소 이후에 취소될 것. 
+  - 방출되는 요소의 type 을 보고 제한거는 것 `ofType (Flux|Mono)`
+  - 요소들을 모두 무시하는 것 `Flux#ignoreElements`, `Mono#ignoreElement`
+  - 중복되는 값을 무시하는 것 
+    - 전체 sequence 중에서 중복 제거 `Flux#distinct`
+    - 같은 요소가 연속으로 오는 걸 막는 것. `Flux#distinctUntilChanged`
+      - distinct 가 모든 요소를 가지고 있어서 중복을 제거하는 데 여기서는 그러지 않는다. 
+      - hashCode 충돌로 인한 구별을 못하는 것보다는 엄격한 구별을 한다. 
+        - equals 비교와 hashcode 비교가 있는데, hashcode 는 힙 메모리에 있는 주소를 바탕으로 값을 매긴다. 일반적으로. 
+        - 그래서 동일한 객체라면 equals 가 되면 hashcode 는 당연히 되야하는거지만, hashcode 는 안되는데 equals 가 되는 건 있을 수 없다. 
+        - hashcode 는 이렇게 중복이 될 수 있으므로 hashtable 에서 설계할 때 알고있어야한다. 
+
+- I want to keep a subset of the sequence
+  - by taking N elements 
+    - 시작부터 N 개 `Flux#take(long)`
+      - unbounded 요청하고 N 개 `Flux#take(long, false)`
+        - 옵션으로 true 를 주면 해당 N 개 만큼 cap 해서 upstream 으로 request 보낸다. upstream 은 N 개보다 더 생산해서 내보내지 않는거지. 
+        - 실제로 이 값 true 고 0 개를 요청하면 subscribe 되지도 않는다.
+        - false 로 옵션주면 unbounded 요청을 하니까 불필요한게 많이 생산될 수 있다. 웬만하면 true 를 주자.
+      - duration 에 기반한 것. `Flux#take(Duration)`
+      - Mono 와 같이 오로지 첫 번째 요소가 중요한 것이라면 `Flux#next`
+    - 끝에서부터 N 개 `Flux#takeLast(long)`
+    - 조건을 만나기 전까지 `Flux#takeUntil (predicate-based)` or `Flux#takeUntilOther (companion publihser-based)`
+      - 멈춰야 할 때를 정해주는 것들.
+
+  - by taking at most 1 element
+    - 구체적인 위치를 통해서 가져오기 `Flux#elementAt`
+    - 마지막 하나. `Flux#takeLast(1)`
+      - 만약 empty 면 에러 `Flux#last`
+      - 만약 empty 면 기본값. `Flux#last(t)`
+  
+  - by skipping elements
+    - 시작부터 skip `Flux#skip(long)`
+      - duration 에 기반한 skip `Flux#skip(duration)`
+    - 마지막부터 skip `Flux#skipLast`
+    - 조건을 만날 때까지 `Flux#skipUntil (predicate-base)` or `Flux#skipUntilOther(publisher) (companion publihser-based)`
+    - 조건을 만나는 동안 skip `Flux#skipWhile`
+
+  - by sampling items
+    - duration 에 기반한 sample `Flux#sample(timespan)`
+      - timespan 을 기반으로 요소를 방출한다. 요소는 해당시간동안 맨 마지막에 방출항 애. 
+      - 완료전에 마지막으로 방출한 요소의 경우에는 onComplete signal 과 함께 나온다.
+      - 마지막 대신 첫 번째 요소를 가지고 싶다면 `Flux#sampleFirst`
+    - publisher 기반의 sample `Flux#sample(publihser)`
+      - publisher 의 방출 타이밍에 맞춰서 window 가 결정됨.
+    - publihser + timeout `Flux#sampleTimeout`
+
+- i expect at most 1 element (error if more than one)
+  - and i want error if the sequence is empty `Flux#single`
+  - and i want default value if the sequence is empty `Flux#single(value)`
+  - and i accept an empty sequence as well: `Flux#singleOrEmpty`
+
