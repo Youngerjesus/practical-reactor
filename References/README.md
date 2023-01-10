@@ -178,3 +178,38 @@ https://projectreactor.io/docs/core/release/reference/
   - and i want default value if the sequence is empty `Flux#single(value)`
   - and i accept an empty sequence as well: `Flux#singleOrEmpty`
 
+
+## A.3. Peeking into a Sequence
+
+peeking 이란 뜻 자체는 훔쳐보다, 살짝 보다 이런 의미가 있다.
+
+- without modifying the final sequence, i want to
+  - get notified of / execute additional behavior
+    - emission: `doOnNext (Flux|Mono)`
+    - completion: `Flux#doOnComplete, Mono#doOnSuccess`
+    - error termination: `doOnError (Flux|Mono)`
+    - cancellation: `doOnCancel (Flux|Mono)`
+    - "start" of the sequence: `doFirst (Flux|Mono)`
+      - subscribe 되기 전에 먼저 실행됨. 
+      - 여러개의 doFirst 가 실행되면 역순으로 실행된다. 
+      - this is tied to `Publisher#subscribe(Subscriber)`
+    - post-subscription : `doOnSubscribe (Flux|Mono)`
+    - request: `doOnRequest (Flux|Mono)`
+    - completion or error: `doOnTerminate (Flux|Mono)
+      - but after it has been propagated downstream: `doAfterTerminate (Flux|Mono)`
+    - any type of signal, represented as a Signal: `doOnEach (Flux|Mono)`
+      - signal 로는 onError or onComplete, onNext, onSubscribe 가 있다. 
+    - any terminating condition (complete, error, cancel): `doFinally (Flux|Mono)`
+
+  - log what happens internally: `log (Flux|Mono)`
+
+- I want to know of all events:
+  - each represented as Signal object:
+    - in a callback outside the sequence: `doOnEach (Flux|Mono)`
+    - instead of the original onNext emissions: `materialize (Flux|Mono)`
+      - onNext, onError, onComplete 와 같이 오는 것을 `Signal` instance 로 받을 수 있다고함.
+      - error 도 signal 로 되기 때문에 에러가 온 이후에 completion 도 온다. 종료를 위해서.
+      - and get back to the onNexts: `dematerialize (Flux|Mono)`
+        - signal 다시 원래의 요소로 돌리는 것.
+        - error signal 은 onError 를 일으키는 것과 같다.
+  - as a line in a log: `log (Flux|Mono)`
