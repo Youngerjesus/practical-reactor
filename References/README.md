@@ -213,3 +213,222 @@ peeking 이란 뜻 자체는 훔쳐보다, 살짝 보다 이런 의미가 있다
         - signal 다시 원래의 요소로 돌리는 것.
         - error signal 은 onError 를 일으키는 것과 같다.
   - as a line in a log: `log (Flux|Mono)`
+
+## A.1. Creating a New Sequence
+
+- that emits a T, and I already have: `just (Flux|Mono)`
+  - from an `Optional<T>: Mono#justOrEmpty(Optional<T>)`
+  - from a potentially null `T: Mono#justOrEmpty(T)`
+
+- that emits a T returned by a method: `just (Flux|Mono)` as well
+  - but lazily captured: use `Mono#fromSupplier` or wrap `just (Flux|Mono)` inside `defer (Flux|Mono)`
+
+- that emits several T I can explicitly enumerate: `Flux#just`
+  - 여러개를 열거해서 방출하고 싶을 때 쓰는 것. 
+
+- that iterates over:
+  - an array: `Flux#fromArray`
+  - a collection or iterable: `Flux#fromIterable`
+  - a range of integers: `Flux#range`
+  - a Stream supplied for each Subscription: `Flux#fromStream(Supplier<Stream>)`
+    - stream 은 재사용되지 않는다. 다 쓰면 자동으로 닫힌다. multiple subscribe 나 re-subscribe 되었을 때 replay 가 되지 않는다. 이 뜻. 
+
+- that emits from various single-valued sources such as:
+  - a Supplier<T>: `Mono#fromSupplier`
+    - supplier 로 부터 Mono 를 생성해서 방출하는 것. null 이면 complete empty 가 나간다.
+  - a task: `Mono#fromCallable`, `Mono#fromRunnable`
+    - fromCallable 은 fromSupplier 와 같다.
+  - a `CompletableFuture<T>: Mono#fromFuture`
+
+- that completes: `empty (Flux|Mono)`
+  - but lazily build the `Throwable: error(Supplier<Throwable>) (Flux|Mono)`
+
+- that never does anything: `never (Flux|Mono)`
+  - signal 을 안보내는 것. 
+
+- that is decided at subscription: `defer (Flux|Mono)`
+  - subscription 이 만들어 질때까지 publisher 생성을 미루는 것. 
+
+- that depends on a disposable resource: `using (Flux|Mono)`
+  - 데이터베이스 커넥션과 같은 Resource 를 subscriber 들을 위해서 확보하고 release 까지 해주는 것. 
+  - 내부적으로 publisher 를 매개변수로 받는다. 
+  - 비동기적으로 resource 를 cleanup 할려면 `usingWhen (Flux|Mono)`
+
+- that generates events programmatically (can use state):
+  - synchronously and one-by-one: `Flux#generate` 
+    - 이벤트를 동기식으로 발행하는 것.  
+    - 내부적으로 상태를 관리하는 것도 가지고 있다.
+  - asynchronously (can also be sync), multiple emissions possible in one pass: `Flux#create (Mono#create as well, without the multiple emission aspect)`
+    - 동기식, 비동기식으로 방출 가능 
+    - 여러 스레드에서 방출하는 것도 가능.
+
+#### Flux Generate Example 
+```java
+public class FluxGenerateExample {
+    public static void main(String[] args) {
+        Flux.generate(() -> 0, (state, sink) -> {
+            sink.next("Value: " + state);
+            if (state == 10) {
+                sink.complete();
+            }
+            return state + 1;
+        }).subscribe(System.out::println);
+    }
+}
+```
+
+#### Flux Generate Example 2 
+
+````java
+public class CharacterGenerator {
+    
+    public Flux<Character> generateCharacters() {
+        
+        return Flux.generate(() -> 97, (state, sink) -> {
+            char value = (char) state.intValue();
+            sink.next(value);
+            if (value == 'z') {
+                sink.complete();
+            }
+            return state + 1;
+        });
+    }
+}
+````
+
+- application 의 상태에 영향을 받고, emit 할 요소를 calculation 후 방출하고 싶을 때 사용한다.
+- generate 에서는 한번의 next() 밖에 못한다. 
+
+#### Flux Create Example
+```java
+import reactor.core.publisher.Flux;
+
+public class FluxCreateExample {
+    public static void main(String[] args) {
+      Flux.<String>create(emitter -> {
+
+        ActionListener al = e -> {
+          emitter.next(textField.getText());
+        };
+        // without cleanup support:
+
+        button.addActionListener(al);
+
+        // with cleanup support:
+
+        button.addActionListener(al);
+        emitter.onDispose(() -> {
+          button.removeListener(al);
+        });
+      });
+    }
+}
+```
+
+- emitter (sinks) 언제 emit 해서 요소를 방출할 건지 조건을 정해놓으면 그거에 따른 flux 가 생성되고 처리할 수 있는건가.
+- generate 와 다르게 application 의 영향을 받지 않고, multiple value or infinity values 를 계산해서 방출하고 싶을 때 쓴다.
+- 기본적으로 Emit 된 아이템들이 downstream 에서 사용할 수 없다면 버퍼링된다. 많으면 drop 되겠지.
+
+#### Flux Create Example 
+
+````java
+public class CharacterGenerator {
+    
+    public Flux<Character> generateCharacters() {
+        
+        return Flux.generate(() -> 97, (state, sink) -> {
+            char value = (char) state.intValue();
+            sink.next(value);
+            if (value == 'z') {
+                sink.complete();
+            }
+            return state + 1;
+        });
+    }
+}
+````
+
+````java
+public class CharacterCreator {
+    public Consumer<List<Character>> consumer;
+
+    public Flux<Character> createCharacterSequence() {
+        return Flux.create(sink -> CharacterCreator.this.consumer = items -> items.forEach(sink::next));
+    }
+}
+````
+
+````java
+@Test
+public void whenCreatingCharactersWithMultipleThreads_thenSequenceIsProducedAsynchronously() throws InterruptedException {
+    CharacterGenerator characterGenerator = new CharacterGenerator();
+    List<Character> sequence1 = characterGenerator.generateCharacters().take(3).collectList().block();
+    List<Character> sequence2 = characterGenerator.generateCharacters().take(2).collectList().block();
+}
+````
+
+````java
+CharacterCreator characterCreator = new CharacterCreator();
+Thread producerThread1 = new Thread(() -> characterCreator.consumer.accept(sequence1));
+Thread producerThread2 = new Thread(() -> characterCreator.consumer.accept(sequence2));
+````
+
+````java
+List<Character> consolidated = new ArrayList<>();
+characterCreator.createCharacterSequence().subscribe(consolidated::add);
+````
+
+- 정리해보자. 
+- `Flux#create()` 에서 하는 일. 구독하면 다른 곳에서 생성해준 객체를 방출함. 
+- `Flux#create().sinks` 가 하는 일. 어떤 이벤트가 올 때 값을 방출할건지 정의해야한다.
+  - `next` 호출을 해줘야한다. 그래야 값이 생성됨. 
+  - `next` 호출을 해줄 수 있는 조건을 `Flux#create` 에서 만들어줘야한다. 
+- 외부에서 해당 이벤트를 발행시킨다. 
+
+## 4.4. Programmatically creating a sequence
+
+## 4.4.1. Synchronous generate
+
+- one-by-one emission 가능 
+- state 를 통한 complete, next, error 조절 가능.
+
+#### Generate Example 추가 
+
+```java
+Flux<String> flux = Flux.generate(
+    AtomicLong::new,
+      (state, sink) -> { 
+      long i = state.getAndIncrement(); 
+      sink.next("3 x " + i + " = " + 3*i);
+      if (i == 10) sink.complete();
+      return state; 
+    }, (state) -> System.out.println("state: " + state));
+```
+
+- mutate state 를 atomic 한 변수로 사용하는 것.
+
+## 4.4.2. Asynchronous and Multi-threaded: create
+
+- FluxSink 를 기반으로 동작
+- blocking 하면 deadlock 걸림.
+- `subscribeOn(schedulers, requestOnSeparateThread = false)` 를 언제하는지 명확하게 이해되지 않는다. 이 설정이 요청과 처리를 분리할 건지 현재의 스레드에서 요청과 처리 모두 담당할건지 를 말하는거 같은데 흠.
+- `create` 는 존재하는 API 를 리액티브 세상으로 올 수 있도록 하는 유용함을 가지고 있다.
+- 여기서 사용하는 `OverflowStrategy` 전략은 다음과 같다. 
+  - `IGNORE`
+    - downstream 의 backpressure 요청을 무시. 
+    - queue 가 다차면 에러를 던진다.
+  - `ERROR`
+    - downstream 이 견디지 못하면 `IllegalStateException` 를 던진다.
+  - `DROP`
+    - downstream 이 받을 준비가 안되면 drop 한다. 
+  - `LATEST`
+    - 가장 최근의 시그널만 받도록 한다.
+  - `BUFFER (default)`
+    - 버퍼링한다. 못견딜때까지.
+
+## 4.4.3. Asynchronous but single-threaded: push
+
+
+## 4.4.4. Handle
+
+
