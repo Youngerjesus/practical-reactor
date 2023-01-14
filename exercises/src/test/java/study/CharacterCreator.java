@@ -9,7 +9,7 @@ public class CharacterCreator {
     public Consumer<List<Character>> consumer;
 
     public Flux<Character> createCharacterSequence() {
-        return Flux.create(sink -> {
+        return Flux.push(sink -> {
             CharacterCreator.this.consumer = items -> items.forEach(e -> {
                 System.out.println("sinkNext: " + Thread.currentThread().getName());
                 sink.next(e);

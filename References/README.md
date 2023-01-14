@@ -413,6 +413,7 @@ Flux<String> flux = Flux.generate(
 - blocking 하면 deadlock 걸림.
 - `subscribeOn(schedulers, requestOnSeparateThread = false)` 를 언제하는지 명확하게 이해되지 않는다. 이 설정이 요청과 처리를 분리할 건지 현재의 스레드에서 요청과 처리 모두 담당할건지 를 말하는거 같은데 흠.
 - `create` 는 존재하는 API 를 리액티브 세상으로 올 수 있도록 하는 유용함을 가지고 있다.
+
 - 여기서 사용하는 `OverflowStrategy` 전략은 다음과 같다. 
   - `IGNORE`
     - downstream 의 backpressure 요청을 무시. 
@@ -426,9 +427,80 @@ Flux<String> flux = Flux.generate(
   - `BUFFER (default)`
     - 버퍼링한다. 못견딜때까지.
 
+#### Flux Create Example 
+
+```java
+Flux<String> bridge = Flux.create(sink -> {
+    myEventProcessor.register( 
+      new MyEventListener<String>() { 
+
+        public void onDataChunk(List<String> chunk) {
+          for(String s : chunk) {
+            sink.next(s); 
+          }
+        }
+
+        public void processComplete() {
+            sink.complete(); 
+        }
+    });
+});
+```
+
+- `bridge` 를 먼저 만들어진 후에 이벤트를 받아야한다. 
+
 ## 4.4.3. Asynchronous but single-threaded: push
+
+- `generate` 와 `create` 의 중간 단계이다.
+
+```java
+Flux<String> bridge = Flux.push(sink -> {
+    myEventProcessor.register(
+      new SingleThreadEventListener<String>() { 
+
+        public void onDataChunk(List<String> chunk) {
+          for(String s : chunk) {
+            sink.next(s); 
+          }
+        }
+
+        public void processComplete() {
+            sink.complete(); 
+        }
+
+        public void processError(Throwable e) {
+            sink.error(e); 
+        }
+    });
+});
+```
+
+- `SingleThreadEventListener` 를 이용해서 Flux 를 내보내는 bridge 역할을 한다. 
+- `Flux#create` 와 `Flux#push` 차이는 뭘까? 
+  - 일단 `Flux#create` 와 `Flux#push` 모두 `sink.next()` 를 해줄 수 있는 consumer 를 만든다. 
+    - 여기에 이벤트 리스너 같은 걸 붙혀놓기도 하지. `sink.next()` 를 호출할려고.
+    - `sink.next()` 는 뭔데? 
+      - `queue` 에 넣고 subscriber 에게 전달해주는 `onNext()` 를 호출해주는 역할을 담당한다. 
+      - 그래서 sink 가 push 한 요소를 다른 publihser 에서 전달받을 수 있는거다.  
+  - ~~그러면 `sink.next()` 이 부분이 하나의 스레드에서만 호출될 수 있는지, 여러 스레드에서 호출될 수 있는지 이 차인가.~~
+  - `Flux#create` 와 `Flux#push` 는 내부적으로 `FluxCreate()` 를 생성하는 과정에서 차이가 있다. 
+    - `FluxCreate.CreateMode` 가 다르다. 
+      - `Flux.create`
+        - `FluxCreate.CreateMode.PUSH_PULL`
+      - `Flux.push()`
+        - `FluxCreate.CreateMode.PUSH_ONLY`
+      - 이 차이로 인해서 Flux.create 는 SerializedFluxSink 로 래핑된다.
+  - `Flux#create` 는 멀티스레딩 소스를 지원한다고 하는데 어떻게 지원할 수 있을까? 
+    -  내부적으로 `AtomicIntegerFieldUpdater` 를 이용해서 동시성 처리를 한다.
+      - `sink.next()` 를 호출해서 subscribe 에 전달까지 해주는 애가 작동하고 있다면, 다른 스레드는 그냥 queue 에 넣어주기만 한다.
+      - 이런 동시성 처리를 지원해준다. 
+    - `Flux.push()` 는 싱글 스레드이므로 그냥 sink.next() 만 해주면 되는거니까. 동시성 처리를 위한 지원이 필요없다.
 
 
 ## 4.4.4. Handle
+
+- handle 은 pulisher 에서 나온 녀석을 보고 다음 publisher 로 방출할건지, complete 때릴건지를 결정해준다. 
+
+
 
 
