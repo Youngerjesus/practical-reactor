@@ -5,6 +5,7 @@ import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.atomic.AtomicReference;
@@ -40,7 +41,8 @@ public class c6_CombiningPublishers extends CombiningPublishersBase {
         Hooks.enableContextLossTracking(); //used for testing - detects if you are cheating!
 
         //todo: feel free to change code as you need
-        Mono<String> currentUserEmail = null;
+        Mono<String> currentUserEmail = getCurrentUser()
+                .flatMap(this::getUserEmail);
         Mono<String> currentUserMono = getCurrentUser();
         getUserEmail(null);
 
@@ -60,8 +62,8 @@ public class c6_CombiningPublishers extends CombiningPublishersBase {
     @Test
     public void task_executor() {
         //todo: feel free to change code as you need
-        Flux<Void> tasks = null;
-        taskExecutor();
+        Flux<Void> tasks = taskExecutor()
+                .flatMap(e -> e);
 
         //don't change below this line
         StepVerifier.create(tasks)
@@ -79,8 +81,8 @@ public class c6_CombiningPublishers extends CombiningPublishersBase {
     @Test
     public void streaming_service() {
         //todo: feel free to change code as you need
-        Flux<Message> messageFlux = null;
-        streamingService();
+        Flux<Message> messageFlux = streamingService()
+                .flatMapMany(e -> e);
 
         //don't change below this line
         StepVerifier.create(messageFlux)
@@ -98,7 +100,7 @@ public class c6_CombiningPublishers extends CombiningPublishersBase {
     @Test
     public void i_am_rubber_you_are_glue() {
         //todo: feel free to change code as you need
-        Flux<Integer> numbers = null;
+        Flux<Integer> numbers = Flux.concat(numberService1(), numberService2());
         numberService1();
         numberService2();
 
@@ -124,7 +126,8 @@ public class c6_CombiningPublishers extends CombiningPublishersBase {
     @Test
     public void task_executor_again() {
         //todo: feel free to change code as you need
-        Flux<Void> tasks = null;
+        Flux<Void> tasks = taskExecutor()
+                .concatMap(e -> e);
         taskExecutor();
 
         //don't change below this line
