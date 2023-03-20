@@ -501,5 +501,86 @@ Flux<String> bridge = Flux.push(sink -> {
 
 - handle 은 pulisher 에서 나온 녀석을 보고 다음 publisher 로 방출할건지, complete 때릴건지를 결정해준다. 
 
+## 4.7 Sinks 
+
+- Sinks 는 안전하게 트리거 될 수 있다. 그래서 특정 이벤트가 발생했을 때 신호를 생성해서 전달하는게 가능.
+- Sinks 는 독립적으로 작동하며 다른 구성요소와 분리될 수 있다.
+- Sinks 는 여러 Subscriber 와 상호작용할 수 있다. 단 unicast() 와 같은 특정 방식의 subscriber 는 제외.
+  - unicast() 는 오로지 한 개의 publisher 가 한 개의 subscriber 에게만 데이터를 전달할 수 있는 방식이디.
+  - unicast() 와 달리 multicast() 는 한 개의 발신자가 동시에 여러 수신자에게 전달할 수 있다.
+
+## 4.7.1. Safely Produce from Multiple Threads by Using Sinks.One and Sinks.Many
+
+- Sinks 를 이용하면 안전하게 데이터 생성 가능. 
+- tryEmit 과 EmitAPI 를 이용해서 여러 스레드에서 병렬로 호출할 수 있고, 실패한다면 빠르게 실패해서 재시도를 하도록 할 수 있다.
+- Sinks 는 Flux 와 같이 배압 제어 (onBackpressureBuffer) 와 같은 기능을 제공할 수 있다.
+- Sinks.Many 는 DownStream Subscriber 에게 Flux 로 전달할 수 있고, Sinks.Empty 와 Sinks.One 은 Mono 로 제공가능.
+- Sinks.many().multicast())
+  - 새로 푸쉬된 데이터를 Subscriber 에게 전달하는 싱크
+- Sinks.many().unicast()
+  - 첫 번째 subscriber 가 등록되기 전에 푸쉬된 데이터만 버퍼링
+- many().replay(): 지정된 기록 크기의 데이터를 새 구독자에게 다시 재생한 후 실시간으로 새 데이터를 푸시하는 싱크
+- one(): 단일 요소를 구독자에게 재생하는 싱크
+- empty(): 오직 종료 신호만 구독자에게 재생하는 싱크. Mono<T> 형태로 볼 수 있습니다.
+
+- 이 내용은 리액터 프레임워크를 사용하여 여러 스레드에서 안전하게 데이터를 생산하고, 동시성 문제를 해결하는 방법에 대한 설명입니다.
+
+
+## 4.7.2. Overview of Available Sinks
+
+Sinks.many().unicast().onBackpressureBuffer(args?)
+
+- Sinks.many 는 내부적으로 buffer 를 이용해서 backpressure 를 다룬다. 위의 메소드는 그리고 최대 하나의 subscriber 만 가질 수 있다.
+- 사용 방법은 `Sinks.many().unicast().onBackpressureBuffer()` 를 하면 된다.
+- 기본적으로 unbounded 로 배압을 조절하기 떄문에 커스텀한 구현을 하려면 Queue 를 구현해얗나다. `Sinks.many().unicast().onBackpressureBuffer(Queue)`
+  - 만약 이런 상황에서 queue 가 bounded 하다면 버퍼가 가득 차고 downstream 으로부터의 요청이 수신되지 않았을 때는 Sink 는 요청을 거절한다. 
+
+Sinks.many().multicast().onBackpressureBuffer(args?)
+- 여러개의 subscrier 에게 데이터를 전달할 수 있다. backpressure 는 각각의 subscriber 를 존중하면서. 
+- 사용 방법은 `Sinks.many().multicast().onBackpressureBuffer().` 이렇다.
+- 모든 subscriber 가 구독을 취소한다면 내부 internal buffer 는 정리된다. 그리고 새로운 subscriber 를 받는 것도 거절한다. 이것과 관련된 설정은 `autoCancel` 파라미터로 할 수 있다. 이건 `multicast` 메소드에있음.
+
+Sinks.many().multicast().directAllOrNothing()
+- 여러 subscriber 에게 onNext 를 drop 할 수 있는 간단한 배압 시스템을 가진 Sinks 이다. 
+- subscriber 중 하나만 느려도 drop 한다. 대신에 재요청을 해서 모든 subscriber 가 다시 처리할 수 있도록 함.
+  - subscriber 가 느리다는 건 demand 요청이 없는 것이다. 맞네. 
+
+Sinks.many().multicast().directBestEffort()
+- subscriber 가 너무 느린 경우가 있는 경우 (수요가 없는 경우) 해당 subscriber 에게서만 onNext 를 드랍함.
+
+Sinks.many().replay()
+- 데이터를 캐싱하고, 늦게 subscribe 한 Subscrier 에게 replay 해줄 수 있는 Sinks.
+
+Sinks.unsafe().many(
+- Publisher 쪽에서 thread 안전성을 가지지 않아도 되는 경우에 사용하는 것. 오버헤드가 적음. thread-safe 한 sink 는 mutli-thread access 를 위해서 약간의 오버헤드가 든다.
+
+Sinks.one()
+- 단일 인스턴스의 Sinks.one<T> 을 생성한다. Mono 로.
+
+Sinks.empty
+- Sinks.one 과 유사하다. 다만 빈 Mono 또는 Mono.error 만 내뱉는게 가능.
+
+
+
+## Question: Sinks 를 통해서 데이터를 생성해 전달하는 것과 Flux.create() 를 통해서 데이터를 생성하는 것의 차이는?
+
+Sinks와 Flux.create()는 두 가지 다른 방법으로 리액터에서 데이터를 생성하고 전달하는 메커니즘입니다. 각 방법의 차이점은 다음과 같습니다.
+
+Sinks:
+
+- Sinks는 명시적으로 다양한 유형의 생성자를 제공합니다 (예: unicast, multicast, replay 등). 이를 통해 사용자는 원하는 생성자 유형에 따라 Sinks를 선택할 수 있습니다.
+- Sinks는 스레드 안전을 보장하는 방식으로 설계되어 있습니다. 이로 인해 여러 스레드에서 동시에 데이터를 생성하고 처리할 수 있습니다.
+- Sinks의 사용법이 좀 더 직관적이고 사용하기 쉽습니다. 예를 들어, Sinks.Many를 사용하면 여러 구독자에게 데이터를 전달할 수 있으며, 각 구독자에 대한 역압을 적용할 수 있습니다.
+
+
+Flux.create():
+
+- Flux.create()는 더 낮은 수준의 메커니즘으로, 데이터 생성 및 처리를 수동으로 제어할 수 있습니다. 이를 통해 사용자는 원하는대로 데이터를 생성하고 처리할 수 있습니다.
+- Flux.create()는 사용자가 생산자의 동작을 직접 구현해야 하기 때문에 더 많은 유연성을 제공하지만, 동시에 구현이 더 복잡해질 수 있습니다.
+- Flux.create()는 사용자가 직접 구현한 생산자가 Reactive Streams 사양을 준수하도록 해야 합니다. 이를 통해 사용자는 역압과 같은 중요한 개념을 직접 관리할 수 있지만, 이로 인해 구현이 더 복잡해질 수 있습니다.
+
+결론적으로, Sinks는 사용자가 직접 스레드 안전성과 역압을 처리할 필요 없이 데이터를 생성하고 전달할 수 있는 더 높은 수준의 메커니즘을 제공하는 반면, Flux.create()는 사용자가 데이터를 생성하고 처리하는 방법을 더 세밀하게 제어할 수 있는 낮은 수준의 메커니즘을 제공합니다. 사용자의 요구와 상황에 따라 적절한 방법을 선택할 수 있습니다.
+
+
 
 
